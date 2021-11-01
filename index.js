@@ -2,19 +2,44 @@ const express = require('express');
 const { MongoClient } = require('mongodb');
 const cors = require('cors');
 require('dotenv').config();
+var admin = require("firebase-admin");
+var serviceAccount = require("./ema-john-simple-b6655-firebase-adminsdk-ek34y-fddd6d97df.json");
+// const { initializeApp } = require('firebase-admin/app');
 
 const app = express();
 const port = process.env.PORT || 5000;
+
+// firebase admin initialization
+
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
 
 // middleware
 app.use(cors());
 app.use(express.json());
 
-// DB_USER=ema-john-simple-user
-// DB_PASS=olYY8cDmST8pOGpT
-
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.sydng.mongodb.net/myFirstDatabase?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+
+async function verifyToken(req, res, next) {
+    if (req.headers?.authorization?.startsWith('Bearer ')) {
+        const idToken = req.headers.authorization.split('Bearer ')[1];
+        // console.log("idToken", idToken);
+        try {
+            const decodedUser = await admin.auth().verifyIdToken(idToken);
+            // console.log(decodedUser);
+            req.decodedUserEmail = decodedUser.email;
+
+        }
+        catch {
+
+        }
+    }
+    next();
+}
 
 async function run() {
     try {
@@ -50,8 +75,26 @@ async function run() {
         });
 
         // add Orders api
+
+        app.get('/orders', verifyToken, async (req, res) => {
+            // console.log(req.headers.authorization);
+            const email = req.query.email;
+            if (req.decodedUserEmail === email)
+                // let query = {};
+                if (email) {
+                    const query = { email: email };
+                    const cursor = orderCollection.find(query);
+                    const orders = await cursor.toArray();
+                    res.json(orders);
+                }
+                else {
+                    res.status(401).json({ message: 'Unauthorized user!' })
+                }
+        })
+
         app.post('/orders', async (req, res) => {
             const order = req.body;
+            order.createdAt = new Date();
             const result = await orderCollection.insertOne(order);
             res.json(result);
         })
